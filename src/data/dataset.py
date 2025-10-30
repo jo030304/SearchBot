@@ -21,7 +21,7 @@ class CCTVDataset(Dataset):
         self.num_frames = num_frames
         self.img_size = img_size
         
-        self.classes = ['군집', '싸움', '쓰러짐']
+        self.classes = ['crowd', 'fight', 'fall']
         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
 
         # processed_frames 기준으로 데이터 구성
@@ -95,7 +95,7 @@ def preprocess_videos(root_dir, split='train', num_frames=16, use_json=True):
     output_root = root / "processed_frames" / split
     json_root = root / "labels_json"
 
-    classes = ['군집', '싸움', '쓰러짐']
+    classes = ['crowd', 'fight', 'fall']
 
     for class_name in classes:
         class_path = video_root / class_name

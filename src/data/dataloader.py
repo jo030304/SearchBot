@@ -7,14 +7,14 @@ def get_dataloaders(batch_size=8, num_frames=16, num_workers=0, img_size=224):
         split="train",
         num_frames=num_frames,
         img_size=img_size,
-        #use_json=True    
+        use_json=True    
     )
     val_dataset = CCTVDataset(
         root_dir="datasets",
         split="val",
         num_frames=num_frames,
         img_size=img_size,
-        #use_json=True
+        use_json=True
     )
 
     train_loader = DataLoader(

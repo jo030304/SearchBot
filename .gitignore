@@ -33,3 +33,5 @@ Thumbs.db
 # Results
 results/*.png
 results/*.csv
+
+*.zip

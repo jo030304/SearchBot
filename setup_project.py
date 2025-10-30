@@ -15,12 +15,12 @@ def create_project_structure():
     # 디렉토리 구조
     directories = [
         # 데이터셋
-        "datasets/train/군집",
-        "datasets/train/싸움",
-        "datasets/train/쓰러짐",
-        "datasets/val/군집",
-        "datasets/val/싸움",
-        "datasets/val/쓰러짐",
+        "datasets/train/crowd",
+        "datasets/train/fight",
+        "datasets/train/fall",
+        "datasets/val/crowd",
+        "datasets/val/fight",
+        "datasets/val/fall",
         
         # 소스 코드
         "src/data",
