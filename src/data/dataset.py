@@ -1,146 +1,136 @@
-"""
-전처리 기반 CCTV 이상행동 데이터셋
-(BASELINE/src/data/dataset.py)
-"""
-
 import cv2
 import json
 import torch
 import numpy as np
-from pathlib import Path
 from torch.utils.data import Dataset
-from PIL import Image
+from pathlib import Path
+import random
+from torchvision import transforms
 
 
 class CCTVDataset(Dataset):
-    """CCTV 이상행동 데이터셋 (전처리된 프레임 기반)"""
-
-    def __init__(self, root_dir, split='train', num_frames=16, img_size=224):
+    """CCTV abnormal behavior dataset (supports JSON labels or preprocessed frames)"""
+    
+    def __init__(self, root_dir, split='train', num_frames=16, img_size=224, use_json=True):
+        """
+        Args:
+            root_dir: datasets/ path
+            split: 'train' or 'val'
+            num_frames: number of frames to sample
+            img_size: target image size
+            use_json: whether to use JSON label data
+        """
         self.root_dir = Path(root_dir)
         self.split = split
         self.num_frames = num_frames
         self.img_size = img_size
-        
+        self.use_json = use_json
+
         self.classes = ['crowd', 'fight', 'fall']
         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
 
-        # processed_frames 기준으로 데이터 구성
+        # Frame & label paths
         self.frame_root = self.root_dir / "processed_frames" / self.split
-        self.videos = self._load_preprocessed()
+        self.label_root = self.root_dir / "labels_json" / self.split
 
-        print(f"✅ {split.upper()}: {len(self.videos)}개 영상 (전처리 프레임 기반)")
+        # Load video metadata
+        if self.use_json:
+            self.videos = self._load_from_json()
+        else:
+            self.videos = self._load_preprocessed()
 
-    def _load_preprocessed(self):
-        """전처리된 프레임 폴더 구조 읽기"""
+        # Image transforms
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((img_size, img_size)),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+
+        print(f"✅ {split.upper()}: {len(self.videos)} videos (use_json={self.use_json})")
+
+
+    def _load_from_json(self):
+        """Load labeled event segments using labels_json"""
         videos = []
         for class_name in self.classes:
-            class_path = self.frame_root / class_name
-            if not class_path.exists():
+            class_dir = self.frame_root / class_name
+            label_dir = self.label_root / class_name
+            if not class_dir.exists() or not label_dir.exists():
                 continue
 
-            for video_dir in class_path.iterdir():
-                if not video_dir.is_dir():
-                    continue
-                frame_files = sorted(video_dir.glob("frame_*.jpg"))
-                if len(frame_files) == 0:
-                    continue
-                videos.append({
-                    'frames': frame_files,
-                    'label': self.class_to_idx[class_name],
-                    'video_name': video_dir.name,
-                    'class_name': class_name
-                })
+            for json_file in label_dir.glob("*.json"):
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                video_name = Path(data["video_name"]).stem
+                events = data.get("annotations", [])
+
+                for ev in events:
+                    start_f, end_f = ev["start_frame"], ev["end_frame"]
+                    videos.append({
+                        "class": class_name,
+                        "video": video_name,
+                        "start": start_f,
+                        "end": end_f
+                    })
         return videos
+
+
+    def _load_preprocessed(self):
+        """Fallback: load from processed_frames without JSON labels"""
+        videos = []
+        for class_name in self.classes:
+            class_dir = self.frame_root / class_name
+            if not class_dir.exists():
+                continue
+            for video_dir in class_dir.iterdir():
+                if video_dir.is_dir():
+                    videos.append({
+                        "class": class_name,
+                        "video": video_dir.name,
+                        "start": None,
+                        "end": None
+                    })
+        return videos
+
+
+    def _sample_frames(self, frame_dir, start_f=None, end_f=None):
+        """Uniformly sample frames within event segment"""
+        frames = sorted(frame_dir.glob("*.jpg"))
+        total = len(frames)
+        if total == 0:
+            raise ValueError(f"❌ No frames found in {frame_dir}")
+
+        if start_f is not None and end_f is not None:
+            frames = frames[start_f:end_f+1]
+        if len(frames) < self.num_frames:
+            indices = np.linspace(0, len(frames)-1, self.num_frames, dtype=int)
+        else:
+            indices = np.linspace(0, len(frames)-1, self.num_frames, dtype=int)
+
+        selected = [frames[i] for i in indices]
+        return selected
+
 
     def __len__(self):
         return len(self.videos)
 
+
     def __getitem__(self, idx):
-        video_info = self.videos[idx]
-        frame_files = video_info['frames']
+        info = self.videos[idx]
+        class_name = info["class"]
+        label = self.class_to_idx[class_name]
 
-        # 균등 샘플링
-        if len(frame_files) < self.num_frames:
-            indices = np.random.choice(len(frame_files), self.num_frames, replace=True)
-        else:
-            indices = np.linspace(0, len(frame_files)-1, self.num_frames, dtype=int)
-
-        selected_frames = [frame_files[i] for i in indices]
+        frame_dir = self.frame_root / class_name / info["video"]
+        frame_paths = self._sample_frames(frame_dir, info["start"], info["end"])
 
         frames = []
-        for frame_path in selected_frames:
-            img = Image.open(frame_path).convert('RGB')
-            img = img.resize((self.img_size, self.img_size))
-            img = np.array(img).astype(np.float32) / 255.0
-            img = torch.from_numpy(img).permute(2, 0, 1)
+        for p in frame_paths:
+            img = cv2.imread(str(p))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = self.transform(img)
             frames.append(img)
 
-        video_tensor = torch.stack(frames)
-
-        # Normalize
-        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        video_tensor = (video_tensor - mean) / std
-
-        return video_tensor, video_info['label']
-
-
-# ============================================================
-# 🔧 전처리 함수: mp4 → 프레임 JPG
-# ============================================================
-
-def preprocess_videos(root_dir, split='train', num_frames=16, use_json=True):
-    root = Path(root_dir)
-    video_root = root / split
-    output_root = root / "processed_frames" / split
-    json_root = root / "labels_json"
-
-    classes = ['crowd', 'fight', 'fall']
-
-    for class_name in classes:
-        class_path = video_root / class_name
-        output_class_path = output_root / class_name
-        output_class_path.mkdir(parents=True, exist_ok=True)
-
-        for video_file in sorted(class_path.glob("*.mp4")):
-            video_name = video_file.stem
-            save_dir = output_class_path / video_name
-            save_dir.mkdir(exist_ok=True)
-
-            cap = cv2.VideoCapture(str(video_file))
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            start, end = 0, total_frames - 1
-
-            # JSON 구간 처리
-            if use_json:
-                json_path = json_root / class_name / f"{video_name}.json"
-                if json_path.exists():
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        json_data = json.load(f)
-                        ann = json_data.get("annotations", {})
-                        event_frame = ann.get("event_frame", [])
-                        if event_frame and len(event_frame) > 0:
-                            start, end = event_frame[0]
-                            end = min(end, total_frames - 1)
-
-            indices = np.linspace(start, end, num_frames, dtype=int)
-
-            for i, idx in enumerate(indices):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-                ret, frame = cap.read()
-                if not ret:
-                    continue
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame_path = save_dir / f"frame_{i:03d}.jpg"
-                cv2.imwrite(str(frame_path), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-
-            cap.release()
-
-            print(f"📸 {class_name}/{video_name} → {len(indices)} 프레임 저장 완료")
-
-    print(f"\n✅ 모든 {split} 데이터 전처리 완료!")
-
-if __name__ == "__main__":
-    # 전처리 실행
-    preprocess_videos("datasets", split="train", num_frames=16)
-    preprocess_videos("datasets", split="val", num_frames=16)
+        frames = torch.stack(frames)  # [T, C, H, W]
+        return frames, label
