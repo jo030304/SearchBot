@@ -15,7 +15,7 @@ def analyze_dataset(root_dir='datasets'):
     """데이터셋 구조 및 통계 분석"""
     
     root_dir = Path(root_dir)
-    classes = ['군집', '싸움', '쓰러짐']
+    classes = ['crowd', 'fight', 'fall']
     
     print("="*80)
     print("📊 AIHUB CCTV 이상행동 데이터셋 분석")
