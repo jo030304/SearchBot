@@ -1,0 +1,35 @@
+# 데이터셋
+datasets/
+
+# 체크포인트
+checkpoints/*.pth
+
+# 로그
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results
+results/*.png
+results/*.csv
