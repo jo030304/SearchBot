@@ -51,30 +51,31 @@ class CCTVDataset(Dataset):
 
 
     def _load_from_json(self):
-        """Load labeled event segments using labels_json"""
-        videos = []
-        for class_name in self.classes:
-            class_dir = self.frame_root / class_name
-            label_dir = self.label_root / class_name
-            if not class_dir.exists() or not label_dir.exists():
-                continue
+            videos = []
+            for class_name in self.classes:
+                class_dir = self.frame_root / class_name
+                label_dir = self.label_root / class_name
+                if not class_dir.exists() or not label_dir.exists():
+                    continue
 
-            for json_file in label_dir.glob("*.json"):
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                for json_file in label_dir.glob("*.json"):
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
 
-                video_name = Path(data["video_name"]).stem
-                events = data.get("annotations", [])
+                    # ✅ 파일 이름 가져오기
+                    video_name = Path(data["metadata"]["file_name"]).stem
 
-                for ev in events:
-                    start_f, end_f = ev["start_frame"], ev["end_frame"]
-                    videos.append({
-                        "class": class_name,
-                        "video": video_name,
-                        "start": start_f,
-                        "end": end_f
-                    })
-        return videos
+                    # ✅ event_frame에 여러 구간이 있을 수도 있음
+                    event_frames = data["annotations"].get("event_frame", [])
+                    for start_f, end_f in event_frames:
+                        videos.append({
+                            "class": class_name,
+                            "video": video_name,
+                            "start": int(start_f),
+                            "end": int(end_f)
+                        })
+
+            return videos
 
 
     def _load_preprocessed(self):
