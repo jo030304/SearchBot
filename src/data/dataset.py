@@ -51,31 +51,38 @@ class CCTVDataset(Dataset):
 
 
     def _load_from_json(self):
-            videos = []
-            for class_name in self.classes:
-                class_dir = self.frame_root / class_name
-                label_dir = self.label_root / class_name
-                if not class_dir.exists() or not label_dir.exists():
+        """labels_json을 기반으로 이벤트 구간만 로드 (E04_001.mp4 → E04_001 폴더 매칭)"""
+        videos = []
+        for class_name in self.classes:
+            class_dir = self.frame_root / class_name
+            label_dir = self.label_root / class_name
+            if not class_dir.exists() or not label_dir.exists():
+                continue
+
+            for json_file in label_dir.glob("*.json"):
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # 🎬 metadata에서 파일명 추출
+                video_name = Path(data["metadata"]["file_name"]).stem  # E04_001.mp4 → E04_001
+                video_dir = class_dir / video_name
+
+                # ⚠️ 실제 프레임 폴더가 존재하는 경우만 추가
+                if not video_dir.exists():
                     continue
 
-                for json_file in label_dir.glob("*.json"):
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+                # 📑 event_frame 정보 읽기
+                event_frames = data["annotations"].get("event_frame", [])
+                for start_f, end_f in event_frames:
+                    videos.append({
+                        "class": class_name,
+                        "video": video_name,
+                        "start": int(start_f),
+                        "end": int(end_f)
+                    })
 
-                    # ✅ 파일 이름 가져오기
-                    video_name = Path(data["metadata"]["file_name"]).stem
-
-                    # ✅ event_frame에 여러 구간이 있을 수도 있음
-                    event_frames = data["annotations"].get("event_frame", [])
-                    for start_f, end_f in event_frames:
-                        videos.append({
-                            "class": class_name,
-                            "video": video_name,
-                            "start": int(start_f),
-                            "end": int(end_f)
-                        })
-
-            return videos
+        print(f"📁 {self.split.upper()} loaded {len(videos)} labeled clips (use_json=True)")
+        return videos
 
 
     def _load_preprocessed(self):
